@@ -38,7 +38,7 @@
     "ci:test": "npm test"
   },
   "dependencies": {
-    "@carderne/sandbox-runtime": "^0.0.67"
+    "@carderne/sandbox-runtime": "^0.0.68"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.0",
