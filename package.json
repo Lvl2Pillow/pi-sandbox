@@ -31,11 +31,11 @@
     "lint": "oxlint index.ts src test",
     "check": "tsc --noEmit",
     "test": "tsx --test test/**/*.test.ts",
-    "all": "npm run fmt && npm run lint && npm run check && npm test",
+    "all": "pnpm run fmt && pnpm run lint && pnpm run check && pnpm test",
     "ci:fmt": "oxfmt --check index.ts src test",
-    "ci:lint": "npm run lint",
-    "ci:check": "npm run check",
-    "ci:test": "npm test"
+    "ci:lint": "pnpm run lint",
+    "ci:check": "pnpm run check",
+    "ci:test": "pnpm test"
   },
   "dependencies": {
     "@carderne/sandbox-runtime": "^0.0.68"
@@ -58,8 +58,10 @@
     "tsx": "^4.23.1",
     "typescript": "^5"
   },
-  "overrides": {
-    "minimatch": ">=10.2.1",
-    "lodash-es": ">=4.18.1"
+  "pnpm": {
+    "overrides": {
+      "minimatch": ">=10.2.1",
+      "lodash-es": ">=4.18.1"
+    }
   }
 }
