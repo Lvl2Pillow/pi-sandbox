@@ -335,21 +335,15 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.registerCommand("sandbox-enable", {
-    description: "Enable the sandbox for this session",
-    handler: async (_args, ctx) => doEnable(ctx),
-  });
-
-  pi.registerCommand("sandbox-disable", {
-    description: "Disable the sandbox for this session",
-    handler: async (_args, ctx) => doDisable(ctx),
-  });
-
   pi.registerCommand("sandbox", {
-    description: "Show sandbox configuration",
-    handler: async (_args, ctx) => {
+    description: "Show sandbox configuration. Use `/sandbox enable` or `/sandbox disable` to toggle.",
+    handler: async (args, ctx) => {
+      const arg = args.trim().toLowerCase();
+      if (arg === "enable") { await doEnable(ctx); return; }
+      if (arg === "disable") { await doDisable(ctx); return; }
+
       if (!sandboxEnabled) {
-        ctx.ui.notify("Sandbox is disabled", "info");
+        ctx.ui.notify("Sandbox is disabled. Use `/sandbox enable` to turn on.", "info");
         return;
       }
       ctx.ui.notify(
