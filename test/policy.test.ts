@@ -51,3 +51,19 @@ test("canonicalizes symlinks and nonexistent descendants", () => {
     join(canonicalizePath(real), "new", "file"),
   );
 });
+
+test("canonicalizes paths with env var expansion", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-envvar-"));
+  mkdirSync(join(dir, "sub"));
+  process.env.TEST_PI_SANDBOX_DIR = dir;
+  try {
+    assert.equal(canonicalizePath("$TEST_PI_SANDBOX_DIR/sub"), canonicalizePath(join(dir, "sub")));
+  } finally {
+    delete process.env.TEST_PI_SANDBOX_DIR;
+  }
+});
+
+test("canonicalizes paths with ~ expansion", () => {
+  const home = process.env.HOME!;
+  assert.ok(canonicalizePath("~/tmp").startsWith(canonicalizePath(home)));
+});

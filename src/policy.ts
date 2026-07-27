@@ -36,7 +36,11 @@ export function domainIsAllowed(domain: string, allowedDomains: string[]): boole
 }
 
 function expandPath(filePath: string): string {
-  return resolve(filePath.replace(/^~(?=$|\/)/, homedir()));
+  return resolve(
+    filePath
+      .replace(/^~(?=$|\/)/, homedir())
+      .replace(/\$(\w+)/g, (_, name) => process.env[name] ?? `$${name}`),
+  );
 }
 
 export function canonicalizePath(filePath: string): string {

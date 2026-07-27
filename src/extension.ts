@@ -12,6 +12,7 @@ import {
   addWritePathToConfig,
   getConfigPaths,
   loadConfig,
+  type SandboxConfig,
 } from "./config.ts";
 import {
   canonicalizePath,
@@ -100,8 +101,9 @@ export default function (pi: ExtensionAPI) {
   async function enableSandbox(
     ctx: Parameters<typeof warnIfAllDomainsAllowed>[0],
     setProxyEnvironment: boolean,
+    config?: SandboxConfig,
   ): Promise<boolean> {
-    const config = loadConfig(ctx.cwd);
+    config ??= loadConfig(ctx.cwd);
     const platform = process.platform;
     if (platform !== "darwin" && platform !== "linux") {
       ctx.ui.notify(`Sandbox not supported on ${platform}`, "warning");
@@ -296,12 +298,12 @@ export default function (pi: ExtensionAPI) {
     await enableSandbox(ctx, true);
   });
 
-  async function doEnable(ctx: Parameters<typeof enableSandbox>[0]): Promise<void> {
+  async function doEnable(ctx: Parameters<typeof enableSandbox>[0], config?: SandboxConfig): Promise<void> {
     if (sandboxEnabled) {
       ctx.ui.notify("Sandbox is already enabled", "info");
       return;
     }
-    if (await enableSandbox(ctx, false)) ctx.ui.notify("Sandbox enabled", "info");
+    if (await enableSandbox(ctx, false, config)) ctx.ui.notify("Sandbox enabled", "info");
   }
 
   async function doDisable(ctx: Parameters<typeof enableSandbox>[0]): Promise<void> {
@@ -323,7 +325,12 @@ export default function (pi: ExtensionAPI) {
   }
 
   // Cross-extension events for external enable/disable requests
-  pi.events.on("pi-sandbox:enable", () => { if (_sandboxCtx) doEnable(_sandboxCtx); });
+  pi.events.on("pi-sandbox:enable", (data) => {
+    if (_sandboxCtx) {
+      const d = data as { config: SandboxConfig } | undefined;
+      doEnable(_sandboxCtx, d?.config);
+    }
+  });
   pi.events.on("pi-sandbox:disable", () => { if (_sandboxCtx) doDisable(_sandboxCtx); });
 
   pi.on("session_shutdown", async () => {
