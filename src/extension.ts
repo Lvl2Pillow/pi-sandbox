@@ -103,7 +103,7 @@ export default function (pi: ExtensionAPI) {
     setProxyEnvironment: boolean,
     config?: SandboxConfig,
   ): Promise<boolean> {
-    config ??= loadConfig(ctx.cwd);
+    const mergedConfig = mergeConfigs(loadConfig(ctx.cwd), config);
     const platform = process.platform;
     if (platform !== "darwin" && platform !== "linux") {
       ctx.ui.notify(`Sandbox not supported on ${platform}`, "warning");
@@ -111,14 +111,14 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
-      await initializeSandbox(config, allowances);
+      await initializeSandbox(mergedConfig, allowances);
       if (setProxyEnvironment && supportsNodeEnvProxy(process.versions.node)) {
         process.env.NODE_USE_ENV_PROXY ??= "1";
       }
       sandboxEnabled = true;
       sandboxInitialized = true;
-      warnIfAllDomainsAllowed(ctx, config);
-      updateStatus(ctx, config);
+      warnIfAllDomainsAllowed(ctx, mergedConfig);
+      updateStatus(ctx, mergedConfig);
       return true;
     } catch (error) {
       sandboxEnabled = false;
@@ -297,6 +297,18 @@ export default function (pi: ExtensionAPI) {
     }
     await enableSandbox(ctx, true);
   });
+
+  function mergeConfigs(base: SandboxConfig, override?: Partial<SandboxConfig>): SandboxConfig {
+    if (override === undefined) {
+      return base;
+    }
+    return {
+      ...base,
+      ...override,
+      network: override.network ? { ...base.network, ...override.network } : base.network,
+      filesystem: override.filesystem ? { ...base.filesystem, ...override.filesystem } : base.filesystem,
+    };
+  }
 
   async function doEnable(ctx: Parameters<typeof enableSandbox>[0], config?: SandboxConfig): Promise<void> {
     if (sandboxEnabled) {
