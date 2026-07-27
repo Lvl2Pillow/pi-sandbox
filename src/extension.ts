@@ -1,5 +1,5 @@
 import { SandboxManager } from "@carderne/sandbox-runtime";
-import { type AgentToolResult, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ExtensionContext, type AgentToolResult, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   createBashToolDefinition,
   isToolCallEventType,
@@ -278,7 +278,11 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
+  // Stored ctx for event-triggered enable/disable
+  let _sandboxCtx: ExtensionContext | null = null;
+
   pi.on("session_start", async (_event, ctx) => {
+    _sandboxCtx = ctx;
     if (pi.getFlag("no-sandbox") as boolean) {
       sandboxEnabled = false;
       ctx.ui.notify("Sandbox disabled via --no-sandbox", "warning");
@@ -292,6 +296,36 @@ export default function (pi: ExtensionAPI) {
     await enableSandbox(ctx, true);
   });
 
+  async function doEnable(ctx: Parameters<typeof enableSandbox>[0]): Promise<void> {
+    if (sandboxEnabled) {
+      ctx.ui.notify("Sandbox is already enabled", "info");
+      return;
+    }
+    if (await enableSandbox(ctx, false)) ctx.ui.notify("Sandbox enabled", "info");
+  }
+
+  async function doDisable(ctx: Parameters<typeof enableSandbox>[0]): Promise<void> {
+    if (!sandboxEnabled) {
+      ctx.ui.notify("Sandbox is already disabled", "info");
+      return;
+    }
+    if (sandboxInitialized) {
+      try {
+        await SandboxManager.reset();
+      } catch {
+        // Ignore cleanup errors.
+      }
+    }
+    sandboxEnabled = false;
+    sandboxInitialized = false;
+    ctx.ui.setStatus("sandbox", "");
+    ctx.ui.notify("Sandbox disabled", "info");
+  }
+
+  // Cross-extension events for external enable/disable requests
+  pi.events.on("pi-sandbox:enable", () => { if (_sandboxCtx) doEnable(_sandboxCtx); });
+  pi.events.on("pi-sandbox:disable", () => { if (_sandboxCtx) doDisable(_sandboxCtx); });
+
   pi.on("session_shutdown", async () => {
     if (!sandboxInitialized) return;
     try {
@@ -303,34 +337,12 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("sandbox-enable", {
     description: "Enable the sandbox for this session",
-    handler: async (_args, ctx) => {
-      if (sandboxEnabled) {
-        ctx.ui.notify("Sandbox is already enabled", "info");
-        return;
-      }
-      if (await enableSandbox(ctx, false)) ctx.ui.notify("Sandbox enabled", "info");
-    },
+    handler: async (_args, ctx) => doEnable(ctx),
   });
 
   pi.registerCommand("sandbox-disable", {
     description: "Disable the sandbox for this session",
-    handler: async (_args, ctx) => {
-      if (!sandboxEnabled) {
-        ctx.ui.notify("Sandbox is already disabled", "info");
-        return;
-      }
-      if (sandboxInitialized) {
-        try {
-          await SandboxManager.reset();
-        } catch {
-          // Ignore cleanup errors.
-        }
-      }
-      sandboxEnabled = false;
-      sandboxInitialized = false;
-      ctx.ui.setStatus("sandbox", "");
-      ctx.ui.notify("Sandbox disabled", "info");
-    },
+    handler: async (_args, ctx) => doDisable(ctx),
   });
 
   pi.registerCommand("sandbox", {
