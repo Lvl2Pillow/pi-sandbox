@@ -64,6 +64,11 @@ test("mergeConfigLayers ignores malformed permission arrays", () => {
   assert.deepEqual(merged.filesystem?.denyWrite, DEFAULT_CONFIG.filesystem?.denyWrite);
 });
 
+test("sandboxUserBash can be enabled via project config override", () => {
+  const merged = mergeConfigLayers(DEFAULT_CONFIG, {}, { sandboxUserBash: true });
+  assert.equal(merged.sandboxUserBash, true);
+});
+
 test("mergeConfigLayers uses defaults only for arrays not configured by either file", () => {
   const merged = mergeConfigLayers(
     DEFAULT_CONFIG,

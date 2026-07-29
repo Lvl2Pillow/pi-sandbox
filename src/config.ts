@@ -7,6 +7,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export type SandboxConfig = Omit<SandboxRuntimeConfig, "network"> & {
   enabled?: boolean;
+  sandboxUserBash?: boolean;
   network?: NonNullable<SandboxRuntimeConfig["network"]> & {
     allowUnauthenticatedSocksProxy?: boolean;
   };
@@ -22,6 +23,7 @@ export type SandboxConfigFile = Omit<Partial<SandboxConfig>, "network" | "filesy
 
 export const DEFAULT_CONFIG: SandboxConfig = {
   enabled: true,
+  sandboxUserBash: false,
   network: {
     allowUnauthenticatedSocksProxy: process.platform === "darwin",
     allowedDomains: [

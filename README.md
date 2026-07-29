@@ -71,6 +71,7 @@ Note below that the order of precedence for filesystem read and write are opposi
 ```json
 {
   "enabled": true,
+  "sandboxUserBash": false,        // !cmd / !!cmd run unsandboxed
   "allowBrowserProcess": true,     // If you want to use agent-browser or similar Chrome setup
   "network": {
     "allowLocalBinding": true,     // ditto
@@ -148,6 +149,10 @@ implies read access; paths do not need to be repeated in `allowRead`.
 `allowUnauthenticatedSocksProxy` is enabled by default on macOS so Git-over-SSH
 works with the built-in `nc`. Domain filtering still applies, but another local process
 that discovers the temporary proxy port can use it while the sandbox is running.
+
+> **Note on `sandboxUserBash`** (default `false`): user-typed commands entered via
+> the `!cmd` / `!!cmd` prefix always bypass the sandbox by default, even when the
+> extension is enabled. Only LLM-initiated `bash` tool calls are sandboxed.
 
 > **⚠️ Read and write have different precedence rules:**
 >

@@ -1,5 +1,9 @@
 import { SandboxManager } from "@carderne/sandbox-runtime";
-import { ExtensionContext, type AgentToolResult, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  ExtensionContext,
+  type AgentToolResult,
+  type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
 import {
   createBashToolDefinition,
   isToolCallEventType,
@@ -202,6 +206,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("user_bash", async (event, ctx) => {
     if (!sandboxEnabled || !sandboxInitialized) return;
+    if (!loadConfig(ctx.cwd).sandboxUserBash) return;
 
     for (const domain of extractDomainsFromCommand(event.command)) {
       if (!domainIsAllowed(domain, effectiveDomains(ctx.cwd))) {
@@ -306,11 +311,16 @@ export default function (pi: ExtensionAPI) {
       ...base,
       ...override,
       network: override.network ? { ...base.network, ...override.network } : base.network,
-      filesystem: override.filesystem ? { ...base.filesystem, ...override.filesystem } : base.filesystem,
+      filesystem: override.filesystem
+        ? { ...base.filesystem, ...override.filesystem }
+        : base.filesystem,
     };
   }
 
-  async function doEnable(ctx: Parameters<typeof enableSandbox>[0], config?: SandboxConfig): Promise<void> {
+  async function doEnable(
+    ctx: Parameters<typeof enableSandbox>[0],
+    config?: SandboxConfig,
+  ): Promise<void> {
     if (sandboxEnabled) {
       ctx.ui.notify("Sandbox is already enabled", "info");
       return;
@@ -343,7 +353,10 @@ export default function (pi: ExtensionAPI) {
       doEnable(_sandboxCtx, d?.config);
     }
   });
-  pi.events.on("pi-sandbox:disable", () => { if (_sandboxCtx) doDisable(_sandboxCtx); });
+
+  pi.events.on("pi-sandbox:disable", () => {
+    if (_sandboxCtx) doDisable(_sandboxCtx);
+  });
 
   pi.on("session_shutdown", async () => {
     if (!sandboxInitialized) return;
@@ -355,11 +368,18 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("sandbox", {
-    description: "Show sandbox configuration. Use `/sandbox enable` or `/sandbox disable` to toggle.",
+    description:
+      "Show sandbox configuration. Use `/sandbox enable` or `/sandbox disable` to toggle.",
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
-      if (arg === "enable") { await doEnable(ctx); return; }
-      if (arg === "disable") { await doDisable(ctx); return; }
+      if (arg === "enable") {
+        await doEnable(ctx);
+        return;
+      }
+      if (arg === "disable") {
+        await doDisable(ctx);
+        return;
+      }
 
       if (!sandboxEnabled) {
         ctx.ui.notify("Sandbox is disabled. Use `/sandbox enable` to turn on.", "info");

@@ -169,9 +169,12 @@ export function formatSandboxConfiguration(
       ? [`  Session write: ${allowances.writePaths.join(", ")}`]
       : []),
     "",
+    `Sandbox user bash (!cmd/!!cmd): ${config.sandboxUserBash ? "enabled" : "disabled"}`,
+    "",
     "Note: ALL reads are prompted unless the path is in allowRead or allowWrite.",
     "Note: allowWrite also grants read access to the same path.",
     "Note: denyRead is not a hard-block — granting a prompt adds to allowRead, overriding denyRead.",
     "Note: denyWrite takes PRECEDENCE over allowWrite and is never prompted.",
+    "Note: sandboxUserBash defaults to false — user-typed commands run unsandboxed.",
   ].join("\n");
 }
