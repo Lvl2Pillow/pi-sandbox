@@ -3,6 +3,7 @@
 Sandbox for [pi](https://pi.dev/).
 
 Sandboxes pi like this:
+
 - read/write/edit: direct control using allow/deny lists
 - bash: uses [`@carderne/sandbox-runtime`](https://www.npmjs.com/package/@carderne/sandbox-runtime) to control network and file system access
 
@@ -12,6 +13,7 @@ prompted to allow it temporarily or permanently rather than silently failing.
 ![demo](./demo/demo.gif)
 
 ## Notes
+
 There is an example config at [sandbox.json](./sandbox.json). It was quite a few things added to get this extension to work with [agent-browser](https://agent-browser.dev/) and other common tools.
 
 These open significant security loopholes, so shouldn't be used in a sensitive context or when you don't need browser support.
@@ -38,14 +40,14 @@ Sandbox initialization failed: Sandbox dependencies not available: ripgrep (rg) 
 
 Install ripgrep before enabling the extension:
 
-| Platform | Install |
-|---|---|
-| macOS (Homebrew) | `brew install ripgrep` |
-| macOS (MacPorts) | `sudo port install ripgrep` |
-| Linux (Debian/Ubuntu) | `sudo apt install ripgrep` |
-| Linux (Fedora/RHEL) | `sudo dnf install ripgrep` |
-| Linux (Arch) | `sudo pacman -S ripgrep` |
-| From source / other | <https://github.com/BurntSushi/ripgrep#installation> |
+| Platform              | Install                                              |
+| --------------------- | ---------------------------------------------------- |
+| macOS (Homebrew)      | `brew install ripgrep`                               |
+| macOS (MacPorts)      | `sudo port install ripgrep`                          |
+| Linux (Debian/Ubuntu) | `sudo apt install ripgrep`                           |
+| Linux (Fedora/RHEL)   | `sudo dnf install ripgrep`                           |
+| Linux (Arch)          | `sudo pacman -S ripgrep`                             |
+| From source / other   | <https://github.com/BurntSushi/ripgrep#installation> |
 
 If `which rg` succeeds in your shell but pi still reports `rg not
 found`, pi is being launched from a parent process whose `PATH` does
@@ -55,11 +57,13 @@ inherit a minimal non-login `PATH`). On macOS, `/opt/homebrew/bin` and
 environment includes whichever one your install uses.
 
 #### Install
+
 ```bash
 pi install npm:pi-sandbox
 ```
 
 #### Configure
+
 Add a config like this either to `~/.pi/agent/sandbox.json` (global) or to `.pi/sandbox.json` (local).
 Scalar settings in the local config take precedence over global settings. The
 path and domain arrays from both files are combined and deduplicated, so a
@@ -71,11 +75,11 @@ Note below that the order of precedence for filesystem read and write are opposi
 ```json
 {
   "enabled": true,
-  "sandboxUserBash": false,        // !cmd / !!cmd run unsandboxed
-  "allowBrowserProcess": true,     // If you want to use agent-browser or similar Chrome setup
+  "sandboxUserBash": false, // !cmd / !!cmd run unsandboxed
+  "allowBrowserProcess": true, // If you want to use agent-browser or similar Chrome setup
   "network": {
-    "allowLocalBinding": true,     // ditto
-    "allowAllUnixSockets": true,   // ditto
+    "allowLocalBinding": true, // ditto
+    "allowAllUnixSockets": true, // ditto
     "allowUnauthenticatedSocksProxy": true, // Enables Git-over-SSH on macOS
     "allowedDomains": ["github.com", "*.github.com"],
     "deniedDomains": []
@@ -128,13 +132,13 @@ extension reloads or pi restarts.
 
 ### What is prompted vs. hard-blocked
 
-| Rule | Behaviour |
-|------|-----------|
-| Domain not in `allowedDomains` | Prompted (bash and `!cmd`) |
-| Path not in `allowRead` or `allowWrite` | Prompted (read tool); granting adds to `allowRead` |
-| Path not in `allowWrite` | Prompted (write/edit tools and bash write failures) |
-| Path in `denyWrite` | Hard-blocked, no prompt |
-| Domain in `deniedDomains` | Hard-blocked at OS level, no prompt |
+| Rule                                    | Behaviour                                           |
+| --------------------------------------- | --------------------------------------------------- |
+| Domain not in `allowedDomains`          | Prompted (bash and `!cmd`)                          |
+| Path not in `allowRead` or `allowWrite` | Prompted (read tool); granting adds to `allowRead`  |
+| Path not in `allowWrite`                | Prompted (write/edit tools and bash write failures) |
+| Path in `denyWrite`                     | Hard-blocked, no prompt                             |
+| Domain in `deniedDomains`               | Hard-blocked at OS level, no prompt                 |
 
 If a path is added to `allowWrite` via a prompt but is also present in
 `denyWrite`, it remains blocked. A warning is shown explaining which config
@@ -169,7 +173,8 @@ entries are used, so an explicit empty array disables that default.
 
 The footer shows a lock indicator while the sandbox is active.
 
-## Ackowledgements
+## Acknowledgements
+
 Based on code from
 [badlogic/pi-mono](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/examples/extensions/sandbox/index.ts)
 by Mario Zechner, used under the

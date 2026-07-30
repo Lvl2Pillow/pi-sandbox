@@ -39,7 +39,7 @@ function expandPath(filePath: string): string {
   return resolve(
     filePath
       .replace(/^~(?=$|\/)/, homedir())
-      .replace(/\$(\w+)/g, (_, name) => process.env[name] ?? `$${name}`),
+      .replace(/\$(\w+)/g, (_, name: string) => process.env[name] ?? `$${name}`),
   );
 }
 

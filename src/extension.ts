@@ -2,6 +2,7 @@ import { SandboxManager } from "@carderne/sandbox-runtime";
 import {
   ExtensionContext,
   type AgentToolResult,
+  type BashToolDetails,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -53,11 +54,17 @@ export default function (pi: ExtensionAPI) {
 
   const localCwd = process.cwd();
   const userShellPath = SettingsManager.create(localCwd).getShellPath();
-  const localBash = createBashToolDefinition(localCwd, { shellPath: userShellPath });
+  const localBash = createBashToolDefinition(localCwd, {
+    shellPath: userShellPath,
+  });
 
   let sandboxEnabled = false;
   let sandboxInitialized = false;
-  const allowances: SessionAllowances = { domains: [], readPaths: [], writePaths: [] };
+  const allowances: SessionAllowances = {
+    domains: [],
+    readPaths: [],
+    writePaths: [],
+  };
 
   const effectiveAllowances = (cwd: string) => resolveAllowances(loadConfig(cwd), allowances);
   const effectiveDomains = (cwd: string) => effectiveAllowances(cwd).domains;
@@ -148,7 +155,7 @@ export default function (pi: ExtensionAPI) {
         }).execute(id, params, signal, onUpdate, ctx);
       };
 
-      let result: AgentToolResult<any>;
+      let result: AgentToolResult<BashToolDetails | undefined>;
       try {
         result = await runBash();
       } catch (error) {
@@ -167,9 +174,9 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (sandboxEnabled && sandboxInitialized && ctx?.hasUI) {
-        const output = result.content
-          .filter((content: any) => content.type === "text")
-          .map((content: any) => content.text)
+        const output = (result.content as Array<{ type: string; text?: string }>)
+          .filter((content) => content.type === "text")
+          .map((content) => content.text ?? "")
           .join("\n");
         const blockedPath = extractBlockedWritePath(output);
 
@@ -253,7 +260,10 @@ export default function (pi: ExtensionAPI) {
       if (!matchesPattern(path, effectiveReadPaths(ctx.cwd))) {
         const choice = await promptReadBlock(ctx, path);
         if (choice === "abort") {
-          return { block: true, reason: `Sandbox: read access denied for "${path}"` };
+          return {
+            block: true,
+            reason: `Sandbox: read access denied for "${path}"`,
+          };
         }
         await applyChoice(choice, "read", path, ctx.cwd);
         return;

@@ -56,7 +56,7 @@ function mergeObjects(base: SandboxConfig, overrides: SandboxConfigFile): Sandbo
       ? ({ ...base.network, ...overrides.network } as NetworkConfig)
       : base.network,
     filesystem: overrides.filesystem
-      ? ({ ...base.filesystem, ...overrides.filesystem } as FilesystemConfig)
+      ? { ...base.filesystem, ...overrides.filesystem }
       : base.filesystem,
   };
 }
@@ -147,14 +147,17 @@ function readJsonConfig(configPath: string, warn: boolean): SandboxConfigFile {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       throw new Error("configuration must be a JSON object");
     }
-    return parsed as SandboxConfigFile;
+    return parsed;
   } catch (error) {
     if (warn) console.error(`Warning: Could not parse ${configPath}: ${error}`);
     return {};
   }
 }
 
-export function getConfigPaths(cwd: string): { globalPath: string; projectPath: string } {
+export function getConfigPaths(cwd: string): {
+  globalPath: string;
+  projectPath: string;
+} {
   return {
     globalPath: join(homedir(), ".pi", "agent", "sandbox.json"),
     projectPath: join(cwd, ".pi", "sandbox.json"),

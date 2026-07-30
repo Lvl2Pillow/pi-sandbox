@@ -27,7 +27,7 @@ test("resolveAllowances makes configured and session write paths readable", () =
   const config = {
     ...DEFAULT_CONFIG,
     filesystem: {
-      ...DEFAULT_CONFIG.filesystem!,
+      ...DEFAULT_CONFIG.filesystem,
       allowRead: [],
       allowWrite: ["/configured-write"],
     },

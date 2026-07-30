@@ -18,9 +18,7 @@
     "deniedDomains": []
   },
   "filesystem": {
-    "denyRead": [
-      "/Users"
-    ],
+    "denyRead": ["/Users"],
     "allowRead": [
       ".",
       "~/projects",
@@ -42,11 +40,6 @@
       "~/Library/Application Support/Google/Chrome",
       "~/Library/Application Support/Google/Chrome for Testing/Crashpad"
     ],
-    "denyWrite": [
-      ".env",
-      ".env.*",
-      "*.pem",
-      "*.key"
-    ]
+    "denyWrite": [".env", ".env.*", "*.pem", "*.key"]
   }
 }
