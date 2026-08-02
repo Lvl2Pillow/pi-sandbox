@@ -186,8 +186,9 @@ export default function (pi: ExtensionAPI) {
           if (isSandboxConfigPath(blockedPath)) {
             return result;
           }
-          const choice = await promptWriteBlock(ctx, blockedPath);
-          if (choice !== "abort") {
+          const promptTimeoutSec = loadConfig(ctx.cwd).promptTimeoutSec;
+          const choice = await promptWriteBlock(ctx, blockedPath, promptTimeoutSec);
+          if (choice !== "abort" && choice !== "timeout") {
             await applyChoice(choice, "write", blockedPath, ctx.cwd);
             const config = loadConfig(ctx.cwd);
             const { projectPath, globalPath } = getConfigPaths(ctx.cwd);
@@ -210,6 +211,21 @@ export default function (pi: ExtensionAPI) {
             });
             return runBash();
           }
+          if (choice === "timeout") {
+            return {
+              ...result,
+              content: [
+                ...(result.content ?? []),
+                {
+                  type: "text",
+                  text:
+                    `\n--- Write access for "${blockedPath}" was NOT granted: ` +
+                    `approval timed out (${promptTimeoutSec ?? 60}s). ` +
+                    `Add it to allowWrite in your sandbox config to allow it. ---`,
+                },
+              ],
+            };
+          }
         }
       }
       return result;
@@ -218,15 +234,19 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("user_bash", async (event, ctx) => {
     if (!sandboxEnabled || !sandboxInitialized) return;
-    if (!loadConfig(ctx.cwd).sandboxUserBash) return;
+    const config = loadConfig(ctx.cwd);
+    if (!config.sandboxUserBash) return;
 
     for (const domain of extractDomainsFromCommand(event.command)) {
       if (!domainIsAllowed(domain, effectiveDomains(ctx.cwd))) {
-        const choice = await promptDomainBlock(ctx, domain);
-        if (choice === "abort") {
+        const choice = await promptDomainBlock(ctx, domain, config.promptTimeoutSec);
+        if (choice === "abort" || choice === "timeout") {
           return {
             result: {
-              output: `Blocked: "${domain}" is not in allowedDomains. Use /sandbox to review your config.`,
+              output:
+                choice === "timeout"
+                  ? `Blocked: approval for "${domain}" timed out; still not in allowedDomains. Use /sandbox to review.`
+                  : `Blocked: "${domain}" is not in allowedDomains. Use /sandbox to review your config.`,
               exitCode: 1,
               cancelled: false,
               truncated: false,
@@ -248,11 +268,14 @@ export default function (pi: ExtensionAPI) {
     if (sandboxInitialized && isToolCallEventType("bash", event)) {
       for (const domain of extractDomainsFromCommand(event.input.command)) {
         if (!domainIsAllowed(domain, effectiveDomains(ctx.cwd))) {
-          const choice = await promptDomainBlock(ctx, domain);
-          if (choice === "abort") {
+          const choice = await promptDomainBlock(ctx, domain, config.promptTimeoutSec);
+          if (choice === "abort" || choice === "timeout") {
             return {
               block: true,
-              reason: `Network access to "${domain}" is blocked (not in allowedDomains).`,
+              reason:
+                choice === "timeout"
+                  ? `Network access to "${domain}" was NOT granted: approval timed out.`
+                  : `Network access to "${domain}" is blocked (not in allowedDomains).`,
             };
           }
           await applyChoice(choice, "domain", domain, ctx.cwd);
@@ -263,11 +286,14 @@ export default function (pi: ExtensionAPI) {
     if (isToolCallEventType("read", event)) {
       const path = canonicalizePath(event.input.path);
       if (!matchesPattern(path, effectiveReadPaths(ctx.cwd))) {
-        const choice = await promptReadBlock(ctx, path);
-        if (choice === "abort") {
+        const choice = await promptReadBlock(ctx, path, config.promptTimeoutSec);
+        if (choice === "abort" || choice === "timeout") {
           return {
             block: true,
-            reason: `Sandbox: read access denied for "${path}"`,
+            reason:
+              choice === "timeout"
+                ? `Sandbox: read access for "${path}" was NOT granted: approval timed out.`
+                : `Sandbox: read access denied for "${path}"`,
           };
         }
         await applyChoice(choice, "read", path, ctx.cwd);
@@ -295,11 +321,14 @@ export default function (pi: ExtensionAPI) {
         };
       }
       if (shouldPromptForWrite(path, effectiveWritePaths(ctx.cwd), matchesPattern)) {
-        const choice = await promptWriteBlock(ctx, path);
-        if (choice === "abort") {
+        const choice = await promptWriteBlock(ctx, path, config.promptTimeoutSec);
+        if (choice === "abort" || choice === "timeout") {
           return {
             block: true,
-            reason: `Sandbox: write access denied for "${path}" (not in allowWrite)`,
+            reason:
+              choice === "timeout"
+                ? `Sandbox: write access for "${path}" was NOT granted: approval timed out.`
+                : `Sandbox: write access denied for "${path}" (not in allowWrite)`,
           };
         }
         await applyChoice(choice, "write", path, ctx.cwd);

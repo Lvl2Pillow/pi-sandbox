@@ -8,6 +8,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 export type SandboxConfig = Omit<SandboxRuntimeConfig, "network"> & {
   enabled?: boolean;
   sandboxUserBash?: boolean;
+  promptTimeoutSec?: number;
   network?: NonNullable<SandboxRuntimeConfig["network"]> & {
     allowUnauthenticatedSocksProxy?: boolean;
   };
@@ -21,9 +22,18 @@ export type SandboxConfigFile = Omit<Partial<SandboxConfig>, "network" | "filesy
   filesystem?: Partial<FilesystemConfig>;
 };
 
+export const DEFAULT_PROMPT_TIMEOUT_SEC = 60;
+
+export function resolvePromptTimeoutSec(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : DEFAULT_PROMPT_TIMEOUT_SEC;
+}
+
 export const DEFAULT_CONFIG: SandboxConfig = {
   enabled: true,
   sandboxUserBash: false,
+  promptTimeoutSec: DEFAULT_PROMPT_TIMEOUT_SEC,
   network: {
     allowUnauthenticatedSocksProxy: process.platform === "darwin",
     allowedDomains: ["*"],
@@ -75,6 +85,7 @@ export function mergeConfigLayers(
 
   return {
     ...merged,
+    promptTimeoutSec: resolvePromptTimeoutSec(merged.promptTimeoutSec),
     network: {
       ...merged.network,
       allowedDomains:

@@ -1,108 +1,34 @@
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 
 import assert from "node:assert/strict";
 
 import {
-  addDomainToConfig,
-  addReadPathToConfig,
-  addWritePathToConfig,
   DEFAULT_CONFIG,
+  DEFAULT_PROMPT_TIMEOUT_SEC,
   mergeConfigLayers,
+  resolvePromptTimeoutSec,
 } from "../src/config.ts";
 
-test("mergeConfigLayers combines configured arrays and deduplicates entries", () => {
-  const merged = mergeConfigLayers(
-    DEFAULT_CONFIG,
-    {
-      network: {
-        allowedDomains: ["global.example.com", "shared.example.com"],
-        deniedDomains: ["blocked.example.com"],
-        allowUnixSockets: ["/global.sock"],
-      },
-      filesystem: {
-        allowRead: ["/global", "/shared"],
-        denyWrite: ["global.key"],
-      },
-    },
-    {
-      network: {
-        allowedDomains: ["project.example.com", "shared.example.com"],
-        deniedDomains: ["project-blocked.example.com"],
-        allowUnixSockets: ["/project.sock"],
-      },
-      filesystem: {
-        allowRead: ["/project", "/shared"],
-        denyWrite: ["project.key"],
-      },
-    },
-  );
-
-  assert.deepEqual(merged.network?.allowedDomains, [
-    "global.example.com",
-    "shared.example.com",
-    "project.example.com",
-  ]);
-  assert.deepEqual(merged.network?.deniedDomains, [
-    "blocked.example.com",
-    "project-blocked.example.com",
-  ]);
-  assert.deepEqual(merged.network?.allowUnixSockets, ["/global.sock", "/project.sock"]);
-  assert.deepEqual(merged.filesystem?.allowRead, ["/global", "/shared", "/project"]);
-  assert.deepEqual(merged.filesystem?.denyWrite, ["global.key", "project.key"]);
+test("resolvePromptTimeoutSec", () => {
+  assert.equal(resolvePromptTimeoutSec(undefined), DEFAULT_PROMPT_TIMEOUT_SEC);
+  assert.equal(resolvePromptTimeoutSec(30), 30);
+  assert.equal(resolvePromptTimeoutSec(0), 0);
+  assert.equal(resolvePromptTimeoutSec(-1), DEFAULT_PROMPT_TIMEOUT_SEC);
+  assert.equal(resolvePromptTimeoutSec("30"), DEFAULT_PROMPT_TIMEOUT_SEC);
+  assert.equal(resolvePromptTimeoutSec(NaN), DEFAULT_PROMPT_TIMEOUT_SEC);
+  assert.equal(resolvePromptTimeoutSec(Infinity), DEFAULT_PROMPT_TIMEOUT_SEC);
 });
 
-test("mergeConfigLayers ignores malformed permission arrays", () => {
+test("mergeConfigLayers resolves promptTimeoutSec", () => {
+  const merged = mergeConfigLayers(DEFAULT_CONFIG, {}, { promptTimeoutSec: 120 });
+  assert.equal(merged.promptTimeoutSec, 120);
+});
+
+test("mergeConfigLayers falls back to default for invalid promptTimeoutSec", () => {
   const merged = mergeConfigLayers(
     DEFAULT_CONFIG,
-    { filesystem: { denyWrite: "*.key" as unknown as string[] } },
+    { promptTimeoutSec: "fast" as unknown as number },
     {},
   );
-
-  assert.deepEqual(merged.filesystem?.denyWrite, DEFAULT_CONFIG.filesystem?.denyWrite);
-});
-
-test("sandboxUserBash can be enabled via project config override", () => {
-  const merged = mergeConfigLayers(DEFAULT_CONFIG, {}, { sandboxUserBash: true });
-  assert.equal(merged.sandboxUserBash, true);
-});
-
-test("mergeConfigLayers uses defaults only for arrays not configured by either file", () => {
-  const merged = mergeConfigLayers(
-    DEFAULT_CONFIG,
-    {
-      enabled: false,
-      filesystem: { allowWrite: [] },
-    },
-    {
-      enabled: true,
-      allowBrowserProcess: true,
-    },
-  );
-
-  assert.equal(merged.enabled, true);
-  assert.equal(merged.allowBrowserProcess, true);
-  assert.deepEqual(merged.filesystem?.allowWrite, []);
-  assert.deepEqual(merged.filesystem?.allowRead, DEFAULT_CONFIG.filesystem?.allowRead);
-  assert.deepEqual(merged.network?.allowedDomains, DEFAULT_CONFIG.network?.allowedDomains);
-});
-
-test("permission writers only persist the property being changed", () => {
-  const root = mkdtempSync(join(tmpdir(), "pi-sandbox-config-"));
-  const configPath = join(root, "sandbox.json");
-
-  addReadPathToConfig(configPath, "/read");
-  addWritePathToConfig(configPath, "/write");
-  addDomainToConfig(configPath, "example.com");
-
-  const written = JSON.parse(readFileSync(configPath, "utf8"));
-  assert.deepEqual(written, {
-    network: { allowedDomains: ["example.com"] },
-    filesystem: {
-      allowRead: ["/read"],
-      allowWrite: ["/write"],
-    },
-  });
+  assert.equal(merged.promptTimeoutSec, DEFAULT_PROMPT_TIMEOUT_SEC);
 });

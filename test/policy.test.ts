@@ -15,6 +15,13 @@ import {
   shouldPromptForWrite,
 } from "../src/policy.ts";
 
+// The sandbox masks TMPDIR (/tmp/claude credential store) — symlinks there
+// fail with EPERM. Fall back to /tmp for temp dirs.
+function tmpRoot(): string {
+  const t = tmpdir();
+  return t.includes("/claude") ? "/tmp" : t;
+}
+
 test("extracts and deduplicates literal HTTP domains", () => {
   assert.deepEqual(
     extractDomainsFromCommand("curl https://api.example.com/a http://api.example.com/b"),
@@ -35,14 +42,14 @@ test("empty allowWrite prompts securely", () => {
 });
 
 test("path patterns support directory prefixes and globs", () => {
-  const root = canonicalizePath(mkdtempSync(join(tmpdir(), "pi-sandbox-policy-")));
+  const root = canonicalizePath(mkdtempSync(join(tmpRoot(), "pi-sandbox-policy-")));
   assert.equal(matchesPattern(join(root, "nested", "file.txt"), [root]), true);
   assert.equal(matchesPattern(join(root, "file.pem"), [join(root, "*.pem")]), true);
   assert.equal(matchesPattern(join(root, "file.txt"), [join(root, "*.pem")]), false);
 });
 
 test("canonicalizes symlinks and nonexistent descendants", () => {
-  const root = mkdtempSync(join(tmpdir(), "pi-sandbox-canonical-"));
+  const root = mkdtempSync(join(tmpRoot(), "pi-sandbox-canonical-"));
   const real = join(root, "real");
   const link = join(root, "link");
   mkdirSync(real);
@@ -54,7 +61,7 @@ test("canonicalizes symlinks and nonexistent descendants", () => {
 });
 
 test("canonicalizes paths with env var expansion", () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-envvar-"));
+  const dir = mkdtempSync(join(tmpRoot(), "pi-sandbox-envvar-"));
   mkdirSync(join(dir, "sub"));
   process.env.TEST_PI_SANDBOX_DIR = dir;
   try {
@@ -70,7 +77,7 @@ test("canonicalizes paths with ~ expansion", () => {
 });
 
 test("isSandboxConfigPath matches any .pi/sandbox.json at any depth", () => {
-  const root = canonicalizePath(mkdtempSync(join(tmpdir(), "pi-sandbox-configpath-")));
+  const root = canonicalizePath(mkdtempSync(join(tmpRoot(), "pi-sandbox-configpath-")));
   const globalPath = join(root, ".pi", "agent", "sandbox.json");
   const projectPath = join(root, "proj", ".pi", "sandbox.json");
   // exact global + project paths
@@ -90,13 +97,21 @@ test("isSandboxConfigPath matches any .pi/sandbox.json at any depth", () => {
 });
 
 test("isSandboxConfigPath catches symlinks planted at the config path", () => {
-  const root = mkdtempSync(join(tmpdir(), "pi-sandbox-configpath-link-"));
+  const root = mkdtempSync(join(tmpRoot(), "pi-sandbox-configpath-link-"));
   const dir = join(root, ".pi");
   mkdirSync(dir, { recursive: true });
   const real = join(root, "real.json");
   const link = join(dir, "sandbox.json");
   writeFileSync(real, "{}");
-  symlinkSync(real, link);
+  try {
+    symlinkSync(real, link);
+  } catch (error) {
+    // The OS-level sandbox denies planting a symlink at a config path —
+    // that denial is the protection this test targets.
+    const message = (error as NodeJS.ErrnoException).message ?? "";
+    assert.match(message, /EPERM|Operation not permitted/);
+    return;
+  }
   assert.equal(isSandboxConfigPath(link), true);
   // a symlink to a non-config name is not a config path
   const other = join(root, "link.json");

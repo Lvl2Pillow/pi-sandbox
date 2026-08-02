@@ -1,11 +1,13 @@
 import { type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 
-import { type SandboxConfig } from "./config.ts";
+import { type SandboxConfig, DEFAULT_PROMPT_TIMEOUT_SEC } from "./config.ts";
 import { allowsAllDomains } from "./policy.ts";
 import { type SessionAllowances } from "./sandbox-runtime.ts";
 
 export type PermissionChoice = "abort" | "session" | "project" | "global";
+
+export type PermissionResult = PermissionChoice | "timeout";
 
 interface PromptOption {
   label: string;
@@ -37,17 +39,42 @@ const PERMISSION_OPTIONS: PromptOption[] = [
 export async function showPermissionPrompt(
   ctx: ExtensionContext,
   title: string,
-): Promise<PermissionChoice> {
+  timeoutSec: number = DEFAULT_PROMPT_TIMEOUT_SEC,
+): Promise<PermissionResult> {
   if (!ctx.hasUI) return "abort";
 
-  const result = await ctx.ui.custom<PermissionChoice>((tui, theme, _kb, done) => {
+  const result = await ctx.ui.custom<PermissionResult>((tui, theme, _kb, done) => {
     let selectedIndex = 0;
     let pendingAction: PermissionChoice | null = null;
-    const resolve = (action: PermissionChoice) => done(action);
+    let timeRemaining = timeoutSec;
+    let timerInterval: ReturnType<typeof setInterval> | null = null;
+    const stopTimer = () => {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    };
+    const resolve = (action: PermissionResult) => {
+      stopTimer();
+      done(action);
+    };
+    if (timeoutSec > 0) {
+      timerInterval = setInterval(() => {
+        timeRemaining -= 1;
+        if (timeRemaining <= 0) {
+          resolve("timeout");
+          return;
+        }
+        tui.requestRender();
+      }, 1000);
+    }
 
     return {
       render(width: number): string[] {
-        const lines = [truncateToWidth(theme.fg("warning", title), width), ""];
+        const timerTag = timerInterval
+          ? `  ${theme.fg(timeRemaining <= 3 ? "warning" : "accent", `⏱ ${timeRemaining}s`)}`
+          : "";
+        const lines = [truncateToWidth(theme.fg("warning", title) + timerTag, width), ""];
         for (let i = 0; i < PERMISSION_OPTIONS.length; i++) {
           const option = PERMISSION_OPTIONS[i];
           const prefix = i === selectedIndex ? " → " : "   ";
@@ -67,6 +94,7 @@ export async function showPermissionPrompt(
         return lines;
       },
       handleInput(data: string): void {
+        if (timerInterval) stopTimer();
         if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
           resolve("abort");
           return;
@@ -104,6 +132,9 @@ export async function showPermissionPrompt(
         }
       },
       invalidate(): void {},
+      dispose(): void {
+        stopTimer();
+      },
     };
   });
 
@@ -113,16 +144,29 @@ export async function showPermissionPrompt(
 export function promptDomainBlock(
   ctx: ExtensionContext,
   domain: string,
-): Promise<PermissionChoice> {
-  return showPermissionPrompt(ctx, `🌐 Network blocked: "${domain}" is not in allowedDomains`);
+  timeoutSec?: number,
+): Promise<PermissionResult> {
+  return showPermissionPrompt(
+    ctx,
+    `🌐 Network blocked: "${domain}" is not in allowedDomains`,
+    timeoutSec,
+  );
 }
 
-export function promptReadBlock(ctx: ExtensionContext, path: string): Promise<PermissionChoice> {
-  return showPermissionPrompt(ctx, `📖 Read blocked: "${path}" is not in allowRead`);
+export function promptReadBlock(
+  ctx: ExtensionContext,
+  path: string,
+  timeoutSec?: number,
+): Promise<PermissionResult> {
+  return showPermissionPrompt(ctx, `📖 Read blocked: "${path}" is not in allowRead`, timeoutSec);
 }
 
-export function promptWriteBlock(ctx: ExtensionContext, path: string): Promise<PermissionChoice> {
-  return showPermissionPrompt(ctx, `📝 Write blocked: "${path}" is not in allowWrite`);
+export function promptWriteBlock(
+  ctx: ExtensionContext,
+  path: string,
+  timeoutSec?: number,
+): Promise<PermissionResult> {
+  return showPermissionPrompt(ctx, `📝 Write blocked: "${path}" is not in allowWrite`, timeoutSec);
 }
 
 export function warnIfAllDomainsAllowed(ctx: ExtensionContext, config: SandboxConfig): void {
@@ -170,6 +214,7 @@ export function formatSandboxConfiguration(
       : []),
     "",
     `Sandbox user bash (!cmd/!!cmd): ${config.sandboxUserBash ? "enabled" : "disabled"}`,
+    `Prompt timeout: ${config.promptTimeoutSec ?? DEFAULT_PROMPT_TIMEOUT_SEC}s (no response = blocked)`,
     "",
     "Note: ALL reads are prompted unless the path is in allowRead or allowWrite.",
     "Note: allowWrite also grants read access to the same path.",
