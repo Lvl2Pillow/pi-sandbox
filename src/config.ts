@@ -26,25 +26,14 @@ export const DEFAULT_CONFIG: SandboxConfig = {
   sandboxUserBash: false,
   network: {
     allowUnauthenticatedSocksProxy: process.platform === "darwin",
-    allowedDomains: [
-      "npmjs.org",
-      "*.npmjs.org",
-      "registry.npmjs.org",
-      "registry.yarnpkg.com",
-      "pypi.org",
-      "*.pypi.org",
-      "github.com",
-      "*.github.com",
-      "api.github.com",
-      "raw.githubusercontent.com",
-    ],
+    allowedDomains: ["*"],
     deniedDomains: [],
   },
   filesystem: {
-    denyRead: ["/Users", "/home"],
-    allowRead: [".", "~/.config", "~/.local", "Library"],
-    allowWrite: [".", "/tmp", "$TMPDIR"],
-    denyWrite: [".env", ".env.*", "*.pem", "*.key"],
+    denyRead: [],
+    allowRead: [".", "~/.agents", "~/**/.agents"],
+    allowWrite: [".", "/tmp", "/private/tmp", "$TMPDIR"],
+    denyWrite: [],
   },
 };
 

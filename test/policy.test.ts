@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ import {
   canonicalizePath,
   domainIsAllowed,
   extractDomainsFromCommand,
+  isSandboxConfigPath,
   matchesPattern,
   shouldPromptForWrite,
 } from "../src/policy.ts";
@@ -66,4 +67,39 @@ test("canonicalizes paths with env var expansion", () => {
 test("canonicalizes paths with ~ expansion", () => {
   const home = process.env.HOME!;
   assert.ok(canonicalizePath("~/tmp").startsWith(canonicalizePath(home)));
+});
+
+test("isSandboxConfigPath matches any .pi/sandbox.json at any depth", () => {
+  const root = canonicalizePath(mkdtempSync(join(tmpdir(), "pi-sandbox-configpath-")));
+  const globalPath = join(root, ".pi", "agent", "sandbox.json");
+  const projectPath = join(root, "proj", ".pi", "sandbox.json");
+  // exact global + project paths
+  assert.equal(isSandboxConfigPath(projectPath), true);
+  assert.equal(isSandboxConfigPath(globalPath), true);
+  // location-independent: config planted in any directory is still caught
+  assert.equal(isSandboxConfigPath(join(root, "evil", ".pi", "sandbox.json")), true);
+  assert.equal(
+    isSandboxConfigPath(join(root, "a", "b", "c", ".pi", "agent", "sandbox.json")),
+    true,
+  );
+  // non-config files / near-misses are not
+  assert.equal(isSandboxConfigPath(join(root, "other.json")), false);
+  assert.equal(isSandboxConfigPath(join(root, "proj", ".pi", "sandbox.json.bak")), false);
+  assert.equal(isSandboxConfigPath(join(root, "proj", ".pi", "sandbox.json", "child")), false);
+  assert.equal(isSandboxConfigPath(join(root, "proj", ".pi", "other.json")), false);
+});
+
+test("isSandboxConfigPath catches symlinks planted at the config path", () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-sandbox-configpath-link-"));
+  const dir = join(root, ".pi");
+  mkdirSync(dir, { recursive: true });
+  const real = join(root, "real.json");
+  const link = join(dir, "sandbox.json");
+  writeFileSync(real, "{}");
+  symlinkSync(real, link);
+  assert.equal(isSandboxConfigPath(link), true);
+  // a symlink to a non-config name is not a config path
+  const other = join(root, "link.json");
+  symlinkSync(real, other);
+  assert.equal(isSandboxConfigPath(other), false);
 });

@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import {
   SandboxManager,
@@ -51,11 +53,36 @@ export function createNetworkAskCallback(allowedDomains: string[]): SandboxAskCa
   return async ({ host }) => domainIsAllowed(host, allowedDomains);
 }
 
+/**
+ * Deny patterns for sandbox config files.
+ *
+ * Project config: root-anchored glob. A bare two-star glob resolves
+ * against cwd, missing configs elsewhere. Global config: tilde literal.
+ * Linux drops globs, so it gets literals instead.
+ */
+function sandboxConfigDenyPatterns(): string[] {
+  const patterns = ["/**/.pi/sandbox.json", "~/.pi/agent/sandbox.json"];
+  if (process.platform === "linux") {
+    patterns.push(
+      join(homedir(), ".pi", "agent", "sandbox.json"),
+      join(process.cwd(), ".pi", "sandbox.json"),
+    );
+  }
+  return patterns;
+}
+
 export function buildRuntimeConfig(
   config: SandboxConfig,
   allowances?: SessionAllowances,
 ): SandboxRuntimeConfig {
   const effective = resolveAllowances(config, allowances);
+  const denyWrite = [
+    ...(config.filesystem?.denyWrite ?? []),
+    // Hard-coded, not configurable: sandbox config files are never
+    // writable from inside the sandbox. denyWrite is emitted last, so it
+    // beats any allowWrite.
+    ...sandboxConfigDenyPatterns(),
+  ];
 
   return {
     network: {
@@ -68,7 +95,7 @@ export function buildRuntimeConfig(
       denyRead: config.filesystem?.denyRead ?? [],
       allowRead: effective.readPaths,
       allowWrite: effective.writePaths,
-      denyWrite: config.filesystem?.denyWrite ?? [],
+      denyWrite,
     },
     ignoreViolations: config.ignoreViolations,
     enableWeakerNestedSandbox: config.enableWeakerNestedSandbox,

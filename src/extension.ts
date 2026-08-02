@@ -23,6 +23,7 @@ import {
   canonicalizePath,
   domainIsAllowed,
   extractDomainsFromCommand,
+  isSandboxConfigPath,
   matchesPattern,
   shouldPromptForWrite,
 } from "./policy.ts";
@@ -181,6 +182,10 @@ export default function (pi: ExtensionAPI) {
         const blockedPath = extractBlockedWritePath(output);
 
         if (blockedPath) {
+          // OS-hard-denied; no grant path, so don't prompt.
+          if (isSandboxConfigPath(blockedPath)) {
+            return result;
+          }
           const choice = await promptWriteBlock(ctx, blockedPath);
           if (choice !== "abort") {
             await applyChoice(choice, "write", blockedPath, ctx.cwd);
@@ -272,6 +277,14 @@ export default function (pi: ExtensionAPI) {
 
     if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
       const path = canonicalizePath((event.input as { path: string }).path);
+      // Hard-denied before every other rule: sandbox config files are
+      // never writable via tools. The OS layer applies the same deny.
+      if (isSandboxConfigPath(path)) {
+        return {
+          block: true,
+          reason: `Sandbox: write to sandbox config "${path}" is not permitted.`,
+        };
+      }
       const denyWrite = config.filesystem?.denyWrite ?? [];
       if (matchesPattern(path, denyWrite)) {
         return {

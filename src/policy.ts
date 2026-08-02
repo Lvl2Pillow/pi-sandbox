@@ -64,6 +64,14 @@ export function canonicalizePath(filePath: string): string {
   }
 }
 
+export function isSandboxConfigPath(path: string): boolean {
+  // Any `.pi/sandbox.json` or `.pi/agent/sandbox.json` at any depth is a
+  // sandbox config, mirroring the OS-level deny. Check raw and resolved
+  // paths so a symlink at the config path is caught.
+  const re = /(?:^|\/)\.pi\/(?:agent\/)?sandbox\.json$/;
+  return re.test(path) || re.test(canonicalizePath(path));
+}
+
 export function matchesPattern(filePath: string, patterns: string[]): boolean {
   const absolutePath = canonicalizePath(filePath);
   return patterns.some((pattern) => {

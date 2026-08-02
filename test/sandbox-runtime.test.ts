@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import assert from "node:assert/strict";
@@ -21,6 +23,29 @@ test("buildRuntimeConfig adds session allowances without mutating config", () =>
   assert.equal(runtime.filesystem?.allowRead?.includes("/write"), true);
   assert.equal(runtime.filesystem?.allowWrite?.includes("/write"), true);
   assert.equal(DEFAULT_CONFIG.network?.allowedDomains?.includes("example.com"), false);
+});
+
+test("buildRuntimeConfig force-denies sandbox config paths despite allowWrite", () => {
+  const config = {
+    ...DEFAULT_CONFIG,
+    filesystem: {
+      ...DEFAULT_CONFIG.filesystem,
+      allowWrite: [".", "/tmp"],
+      denyWrite: [],
+    },
+  };
+  const runtime = buildRuntimeConfig(config);
+  // Root-anchored glob: a bare two-star glob resolves against cwd and
+  // misses configs elsewhere.
+  assert.ok(runtime.filesystem?.denyWrite?.includes("/**/.pi/sandbox.json"));
+  assert.ok(runtime.filesystem?.denyWrite?.includes("~/.pi/agent/sandbox.json"));
+  if (process.platform === "linux") {
+    // bubblewrap can't express `**` — literal fallbacks are added.
+    assert.ok(
+      runtime.filesystem?.denyWrite?.includes(join(homedir(), ".pi", "agent", "sandbox.json")),
+    );
+    assert.ok(runtime.filesystem?.denyWrite?.includes(join(process.cwd(), ".pi", "sandbox.json")));
+  }
 });
 
 test("resolveAllowances makes configured and session write paths readable", () => {
