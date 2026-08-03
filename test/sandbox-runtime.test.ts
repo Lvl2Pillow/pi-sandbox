@@ -8,6 +8,9 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import {
   buildRuntimeConfig,
   extractBlockedWritePath,
+  extractExitCodeFromMessage,
+  isExecExitCode,
+  isSetuidExecDenial,
   resolveAllowances,
   supportsNodeEnvProxy,
 } from "../src/sandbox-runtime.ts";
@@ -73,6 +76,54 @@ test("extractBlockedWritePath recognizes shell sandbox errors", () => {
     "/private/file",
   );
   assert.equal(extractBlockedWritePath("permission denied"), null);
+});
+
+test("extractBlockedWritePath does not false-positive on command output", () => {
+  // Command output that merely echoes the words — not a bash error line.
+  assert.equal(extractBlockedWritePath('grep: "Operation not permitted"; exit 5'), null);
+  assert.equal(extractBlockedWritePath("echo Operation not permitted"), null);
+  // Non-bash shell prefix is not matched (also guards against "zsh"/"crash"
+  // containing "sh" as a substring).
+  assert.equal(extractBlockedWritePath("zsh: /bin/ps: Operation not permitted"), null);
+  assert.equal(extractBlockedWritePath("crash: /bin/ps: Operation not permitted"), null);
+  // Bash error line with a different errno text is not matched.
+  assert.equal(extractBlockedWritePath("bash: /bin/ps: Permission denied"), null);
+});
+
+test("extractExitCodeFromMessage parses bash tool exit code", () => {
+  assert.equal(
+    extractExitCodeFromMessage(
+      "/bin/bash: /bin/ps: Operation not permitted\n\nCommand exited with code 126",
+    ),
+    126,
+  );
+  assert.equal(extractExitCodeFromMessage("no exit code here"), null);
+});
+
+test("extractExitCodeFromMessage uses pi's final status line, not output lookalikes", () => {
+  // Output echoing the phrase must not shadow pi's appended status.
+  const msg =
+    'echo "Command exited with code 5"\nCommand exited with code 5\n\nCommand exited with code 126';
+  assert.equal(extractExitCodeFromMessage(msg), 126);
+});
+
+test("isExecExitCode flags only 126/127", () => {
+  assert.equal(isExecExitCode(126), true);
+  assert.equal(isExecExitCode(127), true);
+  assert.equal(isExecExitCode(1), false);
+  assert.equal(isExecExitCode(null), false);
+});
+
+test("isSetuidExecDenial detects setuid/setgid binaries", () => {
+  if (process.platform !== "darwin") {
+    // setuid system binaries are macOS-specific; skip elsewhere.
+    return;
+  }
+  // /bin/ps is setuid root on macOS.
+  assert.equal(isSetuidExecDenial("/bin/ps"), true);
+  // /bin/date is not setuid.
+  assert.equal(isSetuidExecDenial("/bin/date"), false);
+  assert.equal(isSetuidExecDenial("/nonexistent/path"), false);
 });
 
 test("supportsNodeEnvProxy observes Node release boundaries", () => {

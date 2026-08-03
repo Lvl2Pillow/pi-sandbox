@@ -5,7 +5,7 @@ import { type SandboxConfig, DEFAULT_PROMPT_TIMEOUT_SEC } from "./config.ts";
 import { allowsAllDomains } from "./policy.ts";
 import { type SessionAllowances } from "./sandbox-runtime.ts";
 
-export type PermissionChoice = "abort" | "session" | "project" | "global";
+export type PermissionChoice = "abort" | "session" | "project" | "global" | "unsandboxed";
 
 export type PermissionResult = PermissionChoice | "timeout";
 
@@ -36,10 +36,31 @@ const PERMISSION_OPTIONS: PromptOption[] = [
   },
 ];
 
+/**
+ * Run the blocked command once with default (unsandboxed) pi bash.
+ * One-shot: never persisted in allowances or config, so every command re-asks.
+ */
+export const UNSANDBOXED_OPTION: PromptOption = {
+  label: "Run once with default pi bash",
+  key: "U",
+  action: "unsandboxed",
+  hint: "(not saved; re-asks every time)",
+};
+
+/**
+ * Setuid/setgid denials have no grant path — only a one-shot unsandboxed
+ * run or abort. "Run once" is first so Enter picks it.
+ */
+export const SETUID_OPTIONS: PromptOption[] = [
+  UNSANDBOXED_OPTION,
+  { label: "Abort (keep blocked)", key: "esc", action: "abort" },
+];
+
 export async function showPermissionPrompt(
   ctx: ExtensionContext,
   title: string,
   timeoutSec: number = DEFAULT_PROMPT_TIMEOUT_SEC,
+  options: PromptOption[] = PERMISSION_OPTIONS,
 ): Promise<PermissionResult> {
   if (!ctx.hasUI) return "abort";
 
@@ -75,8 +96,8 @@ export async function showPermissionPrompt(
           ? `  ${theme.fg(timeRemaining <= 3 ? "warning" : "accent", `⏱ ${timeRemaining}s`)}`
           : "";
         const lines = [truncateToWidth(theme.fg("warning", title) + timerTag, width), ""];
-        for (let i = 0; i < PERMISSION_OPTIONS.length; i++) {
-          const option = PERMISSION_OPTIONS[i];
+        for (let i = 0; i < options.length; i++) {
+          const option = options[i];
           const prefix = i === selectedIndex ? " → " : "   ";
           const keyHint = theme.fg("accent", `[${option.key}]`);
           let label = option.label;
@@ -113,8 +134,8 @@ export async function showPermissionPrompt(
           tui.requestRender();
           return;
         }
-        for (let i = 0; i < PERMISSION_OPTIONS.length; i++) {
-          const option = PERMISSION_OPTIONS[i];
+        for (let i = 0; i < options.length; i++) {
+          const option = options[i];
           if (data === option.key) {
             resolve(option.action);
             return;
@@ -159,6 +180,23 @@ export function promptReadBlock(
   timeoutSec?: number,
 ): Promise<PermissionResult> {
   return showPermissionPrompt(ctx, `📖 Read blocked: "${path}" is not in allowRead`, timeoutSec);
+}
+
+/**
+ * Setuid/setgid exec denial: caused by the sandbox itself (Seatbelt
+ * hard-blocks setuid exec), so the one-shot unsandboxed run is the fix.
+ */
+export function promptSetuidBlock(
+  ctx: ExtensionContext,
+  path: string,
+  timeoutSec?: number,
+): Promise<PermissionResult> {
+  return showPermissionPrompt(
+    ctx,
+    `⛔ Cannot execute "${path}" inside the sandbox: setuid/setgid binaries are hard-blocked`,
+    timeoutSec,
+    SETUID_OPTIONS,
+  );
 }
 
 export function promptWriteBlock(

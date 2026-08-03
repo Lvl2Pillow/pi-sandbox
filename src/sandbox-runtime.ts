@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -130,9 +130,45 @@ export function supportsNodeEnvProxy(version: string): boolean {
 
 export function extractBlockedWritePath(output: string): string | null {
   const match = output.match(
-    /(?:\/bin\/bash|bash|sh): (?:line \d: )?(\/[^\s:]+): Operation not permitted/,
+    /(?:\/bin\/bash|\bbash|\bsh): (?:line \d: )?(\/[^\s:]+): Operation not permitted/,
   );
   return match ? match[1] : null;
+}
+
+/**
+ * Extract the exit code from a pi bash-tool error message, e.g.
+ * "...\n\nCommand exited with code 126". Returns null when absent.
+ *
+ * Pi always appends this status as the FINAL line, so we anchor to the end of
+ * the string — command output that happens to contain the same phrase earlier
+ * cannot produce a false match.
+ */
+export function extractExitCodeFromMessage(message: string): number | null {
+  const match = message.match(/Command exited with code (\d+)\s*$/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+/**
+ * True when the error message indicates bash could not EXECUTE a command
+ * (exit 126 = found but not executable, 127 = not found). These are exec
+ * failures, never write denials — granting write access cannot fix them.
+ */
+export function isExecExitCode(exitCode: number | null): boolean {
+  return exitCode === 126 || exitCode === 127;
+}
+
+/**
+ * True when `path` is a setuid/setgid executable. macOS Seatbelt hard-denies
+ * exec of setuid/setgid binaries inside a sandbox (EPERM, no profile can
+ * lift it), so this is an exec denial, not a writable path.
+ */
+export function isSetuidExecDenial(path: string): boolean {
+  try {
+    const mode = statSync(path).mode;
+    return (mode & 0o4000) !== 0 || (mode & 0o2000) !== 0;
+  } catch {
+    return false;
+  }
 }
 
 export function createSandboxedBashOps(shellPath?: string): BashOperations {

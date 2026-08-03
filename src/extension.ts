@@ -30,7 +30,10 @@ import {
 import {
   createSandboxedBashOps,
   extractBlockedWritePath,
+  extractExitCodeFromMessage,
   initializeSandbox,
+  isExecExitCode,
+  isSetuidExecDenial,
   reinitializeSandbox,
   resolveAllowances,
   type SessionAllowances,
@@ -42,6 +45,7 @@ import {
   type PermissionChoice,
   promptDomainBlock,
   promptReadBlock,
+  promptSetuidBlock,
   promptWriteBlock,
   warnIfAllDomainsAllowed,
 } from "./ui.ts";
@@ -87,6 +91,7 @@ export default function (pi: ExtensionAPI) {
     value: string,
     cwd: string,
   ): Promise<void> {
+    if (choice === "unsandboxed") return;
     const { globalPath, projectPath } = getConfigPaths(cwd);
     const target = choice === "project" ? projectPath : globalPath;
 
@@ -157,10 +162,20 @@ export default function (pi: ExtensionAPI) {
       };
 
       let result: AgentToolResult<BashToolDetails | undefined>;
+      let exitCode: number | null = null;
       try {
         result = await runBash();
       } catch (error) {
-        if (!(error instanceof Error) || !error.message.includes("Operation not permitted")) {
+        if (!(error instanceof Error)) throw error;
+        // Only treat it as a sandbox denial when the message contains a real
+        // bash error line (`bash: <path>: Operation not permitted`).
+        const blockedPath = extractBlockedWritePath(error.message);
+        if (!blockedPath) throw error;
+        exitCode = extractExitCodeFromMessage(error.message);
+        if (isExecExitCode(exitCode) && !isSetuidExecDenial(blockedPath)) {
+          // Bash found the command but could not exec it for a reason that has
+          // nothing to do with the sandbox (no exec bit, wrong arch, bad
+          // shebang). Surface the exact error default pi bash would produce.
           throw error;
         }
         result = {
@@ -185,6 +200,41 @@ export default function (pi: ExtensionAPI) {
           // OS-hard-denied; no grant path, so don't prompt.
           if (isSandboxConfigPath(blockedPath)) {
             return result;
+          }
+          // Exec denial caused by the sandbox itself: Seatbelt hard-blocks
+          // setuid/setgid exec, so no write grant can ever unblock it. The
+          // one-shot unsandboxed run is the only fix.
+          if (isSetuidExecDenial(blockedPath)) {
+            const choice = await promptSetuidBlock(
+              ctx,
+              blockedPath,
+              loadConfig(ctx.cwd).promptTimeoutSec,
+            );
+            if (choice === "unsandboxed") {
+              onUpdate?.({
+                content: [
+                  {
+                    type: "text",
+                    text: `\n--- Running once with default pi bash (unsandboxed) ---\n`,
+                  },
+                ],
+                details: {},
+              });
+              return localBash.execute(id, params, signal, onUpdate, ctx);
+            }
+            return {
+              ...result,
+              content: [
+                ...(result.content ?? []),
+                {
+                  type: "text",
+                  text:
+                    choice === "timeout"
+                      ? `Blocked: approval for "${blockedPath}" timed out; still blocked in sandbox.`
+                      : `Blocked: "${blockedPath}" is not executable in the sandbox and was not approved.`,
+                },
+              ],
+            };
           }
           const promptTimeoutSec = loadConfig(ctx.cwd).promptTimeoutSec;
           const choice = await promptWriteBlock(ctx, blockedPath, promptTimeoutSec);
