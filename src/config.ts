@@ -41,7 +41,7 @@ export const DEFAULT_CONFIG: SandboxConfig = {
   },
   filesystem: {
     denyRead: [],
-    allowRead: [".", "~/.agents", "~/**/.agents"],
+    allowRead: [".", "~/.agents/skills"],
     allowWrite: [".", "/tmp", "/private/tmp", "$TMPDIR"],
     denyWrite: [],
   },
