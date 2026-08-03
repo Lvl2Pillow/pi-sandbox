@@ -72,6 +72,9 @@ export default function (pi: ExtensionAPI) {
 
   let sandboxEnabled = false;
   let sandboxInitialized = false;
+  let appliedConfig: SandboxConfig | null = null;
+  // Stack of pre-enable configs for external `pi-sandbox:disable` restore.
+  const externalConfigStack: SandboxConfig[] = [];
   const allowances: SessionAllowances = {
     domains: [],
     readPaths: [],
@@ -135,13 +138,18 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
-      await initializeSandbox(mergedConfig, allowances);
+      if (sandboxInitialized) {
+        // reset + re-initialize so a new config actually takes effect
+        await reinitializeSandbox(mergedConfig, allowances);
+      } else {
+        await initializeSandbox(mergedConfig, allowances);
+      }
       if (setProxyEnvironment && supportsNodeEnvProxy(process.versions.node)) {
         process.env.NODE_USE_ENV_PROXY ??= "1";
       }
       sandboxEnabled = true;
       sandboxInitialized = true;
-      warnIfAllDomainsAllowed(ctx, mergedConfig);
+      appliedConfig = mergedConfig;
       updateStatus(ctx, mergedConfig);
       return true;
     } catch (error) {
@@ -399,6 +407,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     _sandboxCtx = ctx;
+    warnIfAllDomainsAllowed(ctx, loadConfig(ctx.cwd));
     if (pi.getFlag("no-sandbox") as boolean) {
       sandboxEnabled = false;
       ctx.ui.notify("Sandbox disabled via --no-sandbox", "warning");
@@ -430,7 +439,7 @@ export default function (pi: ExtensionAPI) {
     ctx: Parameters<typeof enableSandbox>[0],
     config?: SandboxConfig,
   ): Promise<void> {
-    if (sandboxEnabled) {
+    if (sandboxEnabled && config === undefined) {
       ctx.ui.notify("Sandbox is already enabled", "info");
       return;
     }
@@ -451,20 +460,33 @@ export default function (pi: ExtensionAPI) {
     }
     sandboxEnabled = false;
     sandboxInitialized = false;
+    appliedConfig = null;
     ctx.ui.setStatus("sandbox", "");
     ctx.ui.notify("Sandbox disabled", "info");
   }
 
-  // Cross-extension events for external enable/disable requests
+  // Cross-extension events for external enable/disable requests.
+  // `enable` snapshots the config currently in effect; `disable` restores
+  // that snapshot instead of fully disabling the sandbox.
   pi.events.on("pi-sandbox:enable", (data) => {
-    if (_sandboxCtx) {
-      const d = data as { config: SandboxConfig } | undefined;
-      doEnable(_sandboxCtx, d?.config);
+    if (!_sandboxCtx) return;
+    const ctx = _sandboxCtx;
+    const d = data as { config: SandboxConfig } | undefined;
+    if (d?.config) {
+      externalConfigStack.push(appliedConfig ?? loadConfig(ctx.cwd));
     }
+    doEnable(ctx, d?.config);
   });
 
   pi.events.on("pi-sandbox:disable", () => {
-    if (_sandboxCtx) doDisable(_sandboxCtx);
+    if (!_sandboxCtx) return;
+    const ctx = _sandboxCtx;
+    const previous = externalConfigStack.pop();
+    if (previous === undefined) {
+      doDisable(ctx);
+      return;
+    }
+    doEnable(ctx, previous);
   });
 
   pi.on("session_shutdown", async () => {
