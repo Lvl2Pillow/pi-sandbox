@@ -112,10 +112,10 @@ test("enable snapshots the current config and reinitializes with the restricted 
   // session start: sandbox enabled with the loaded (default) config
   await fire(handlers["session_start"]?.[0], {}, ctx);
   assert.equal(sandboxCalls.length, 1);
-  // reads are deny-listed: empty denyRead = all readable
+  // reads are deny-listed: empty denyRead = all readable → section hidden
   assert.ok(
-    statuses.at(-1)?.includes("📖 *"),
-    `footer shows all-readable, got: ${statuses.at(-1)}`,
+    !statuses.at(-1)?.includes("📖"),
+    `footer hides all-readable section, got: ${statuses.at(-1)}`,
   );
 
   // plan-mode ON: enable with the restricted config
@@ -128,12 +128,15 @@ test("enable snapshots the current config and reinitializes with the restricted 
   );
   assert.deepEqual(allowWriteOf(initializedConfigs().at(-1)), []);
   assert.ok(notifies.includes("Sandbox enabled"));
-  // footer updated to the restricted config: write = "-", network preserved
+  // footer updated to the restricted config: write = "-", network '*' hidden
   assert.ok(
     statuses.at(-1)?.includes("✏️  -"),
     `footer reflects restricted write, got: ${statuses.at(-1)}`,
   );
-  assert.ok(statuses.at(-1)?.includes("🌐"), "network icon stays visible during plan mode");
+  assert.ok(
+    !statuses.at(-1)?.includes("🌐"),
+    `network '*' section hidden, got: ${statuses.at(-1)}`,
+  );
 });
 
 test("disable restores the pre-enable config instead of fully disabling", async () => {
@@ -158,9 +161,12 @@ test("disable restores the pre-enable config instead of fully disabling", async 
   assert.ok(Array.isArray(restored) && restored.length > 0, "restored allowWrite is non-empty");
   assert.notDeepEqual(restored, []);
   assert.ok(!notifies.includes("Sandbox disabled"));
-  // footer restored: write count back, network still present
+  // footer restored: write count back, network '*' still hidden
   assert.ok(!statuses.at(-1)?.includes("✏️  -"), `footer write restored, got: ${statuses.at(-1)}`);
-  assert.ok(statuses.at(-1)?.includes("🌐"), "network icon present after restore");
+  assert.ok(
+    !statuses.at(-1)?.includes("🌐"),
+    `network '*' section hidden, got: ${statuses.at(-1)}`,
+  );
 });
 
 test("disable without a matching enable falls back to full disable", async () => {
@@ -217,5 +223,8 @@ test("nested enables restore in reverse order (LIFO)", async () => {
   );
   assert.ok(!notifies.includes("Sandbox disabled"));
   assert.ok(!statuses.at(-1)?.includes("✏️  1"), "footer write count restored past LIFO");
-  assert.ok(statuses.at(-1)?.includes("🌐"), "network icon present after LIFO restore");
+  assert.ok(
+    !statuses.at(-1)?.includes("🌐"),
+    `network '*' section hidden, got: ${statuses.at(-1)}`,
+  );
 });

@@ -96,11 +96,12 @@ export default function (pi: ExtensionAPI) {
   }
 
   async function applyChoice(
+    ctx: Parameters<typeof warnIfAllDomainsAllowed>[0],
     choice: Exclude<PermissionChoice, "abort">,
     kind: "domain" | "read" | "write",
     value: string,
-    cwd: string,
   ): Promise<void> {
+    const cwd = ctx.cwd;
     if (choice === "unsandboxed") return;
     const { globalPath, projectPath } = getConfigPaths(cwd);
     const target = choice === "project" ? projectPath : globalPath;
@@ -116,13 +117,15 @@ export default function (pi: ExtensionAPI) {
       if (choice !== "session") addWritePathToConfig(target, value);
     }
     await refreshSandbox(cwd);
+    updateStatus(ctx, loadConfig(cwd));
   }
 
   function updateStatus(
     ctx: Parameters<typeof warnIfAllDomainsAllowed>[0],
     config: ReturnType<typeof loadConfig>,
   ) {
-    ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", formatSandboxStatus(config)));
+    const status = formatSandboxStatus(config, allowances);
+    ctx.ui.setStatus("sandbox", status ? ctx.ui.theme.fg("accent", status) : undefined);
   }
 
   async function enableSandbox(
@@ -254,7 +257,7 @@ export default function (pi: ExtensionAPI) {
           const promptTimeoutSec = loadConfig(ctx.cwd).promptTimeoutSec;
           const choice = await promptWriteBlock(ctx, blockedPath, promptTimeoutSec);
           if (choice !== "abort" && choice !== "timeout") {
-            await applyChoice(choice, "write", blockedPath, ctx.cwd);
+            await applyChoice(ctx, choice, "write", blockedPath);
             const config = loadConfig(ctx.cwd);
             const { projectPath, globalPath } = getConfigPaths(ctx.cwd);
             if (matchesPattern(blockedPath, config.filesystem?.denyWrite ?? [])) {
@@ -318,7 +321,7 @@ export default function (pi: ExtensionAPI) {
             },
           };
         }
-        await applyChoice(choice, "domain", domain, ctx.cwd);
+        await applyChoice(ctx, choice, "domain", domain);
       }
     }
     return { operations: createSandboxedBashOps(userShellPath) };
@@ -343,7 +346,7 @@ export default function (pi: ExtensionAPI) {
                   : `Network access to "${domain}" is blocked (not in allowedDomains).`,
             };
           }
-          await applyChoice(choice, "domain", domain, ctx.cwd);
+          await applyChoice(ctx, choice, "domain", domain);
         }
       }
     }
@@ -361,7 +364,7 @@ export default function (pi: ExtensionAPI) {
                 : `Sandbox: read access denied for "${path}"`,
           };
         }
-        await applyChoice(choice, "read", path, ctx.cwd);
+        await applyChoice(ctx, choice, "read", path);
         return;
       }
     }
@@ -396,7 +399,7 @@ export default function (pi: ExtensionAPI) {
                 : `Sandbox: write access denied for "${path}" (not in allowWrite)`,
           };
         }
-        await applyChoice(choice, "write", path, ctx.cwd);
+        await applyChoice(ctx, choice, "write", path);
         return;
       }
     }

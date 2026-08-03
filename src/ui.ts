@@ -2,7 +2,7 @@ import { type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 
 import { type SandboxConfig, DEFAULT_PROMPT_TIMEOUT_SEC } from "./config.ts";
-import { allowsAllDomains } from "./policy.ts";
+import { allowsAllDomains, matchesPattern } from "./policy.ts";
 import { type SessionAllowances } from "./sandbox-runtime.ts";
 
 export type PermissionChoice = "abort" | "session" | "project" | "global" | "unsandboxed";
@@ -233,16 +233,58 @@ export function warnIfAllDomainsAllowed(ctx: ExtensionContext, config: SandboxCo
  * Reads are deny-listed at the OS level: `*` = nothing denied (all
  * readable), `-` = all denied, else count of denied regions.
  * Write/network are allow-listed: `*` = everything allowed, `-` = nothing.
+ *
+ * Session-granted allowances (module memory) are folded into the effective
+ * lists so the footer updates when the user approves a path/domain for the
+ * current session only (write/network counts grow, read grants neutralize
+ * matching denyRead entries).
+ *
+ * Sections summarizing to `*` (no restriction — all readable / everything
+ * allowed) are omitted: showing "read all / network all" permanently is
+ * noise and can't be changed at runtime anyway.
  */
-export function formatSandboxStatus(config: SandboxConfig): string {
-  return `📖 ${summarizeDenied(config.filesystem?.denyRead)} ✏️  ${summarizeList(config.filesystem?.allowWrite)} 🌐 ${summarizeList(config.network?.allowedDomains)}`;
+export function formatSandboxStatus(config: SandboxConfig, allowances?: SessionAllowances): string {
+  const write = summarizeList(mergeLists(config.filesystem?.allowWrite, allowances?.writePaths));
+  const domains = summarizeList(mergeLists(config.network?.allowedDomains, allowances?.domains));
+  const read = summarizeDenied(config.filesystem?.denyRead, [
+    ...(allowances?.readPaths ?? []),
+    ...(allowances?.writePaths ?? []),
+  ]);
+  const parts: string[] = [];
+  if (read !== "*") parts.push(`📖 ${read}`);
+  if (write !== "*") parts.push(`✏️  ${write}`);
+  if (domains !== "*") parts.push(`🌐 ${domains}`);
+  return parts.join(" ");
+}
+
+function mergeLists(
+  configEntries: string[] | undefined,
+  sessionEntries: string[] | undefined,
+): string[] {
+  const merged = [...(configEntries ?? []), ...(sessionEntries ?? [])];
+  return merged.filter((value, index) => merged.indexOf(value) === index);
 }
 
 /** Deny-list summary: empty deny = all readable; `*` deny = nothing. */
-function summarizeDenied(entries: string[] | undefined): string {
+function summarizeDenied(entries: string[] | undefined, granted: string[]): string {
   if (!entries || entries.length === 0) return "*";
   if (entries.includes("*")) return "-";
-  return String(entries.length);
+  const remaining = entries.filter(
+    (entry) => !granted.some((path) => grantCoversDeny(path, entry)),
+  );
+  return remaining.length === 0 ? "*" : String(remaining.length);
+}
+
+/**
+ * True when a session-granted path neutralizes a denyRead entry (allowRead
+ * overrides denyRead at the OS level). Covers both directions: the grant
+ * inside the denied region (literal or glob deny), and a literal deny inside
+ * the granted region (parent grant covers child deny).
+ */
+function grantCoversDeny(grantPath: string, denyEntry: string): boolean {
+  if (matchesPattern(grantPath, [denyEntry])) return true;
+  if (!denyEntry.includes("*")) return matchesPattern(denyEntry, [grantPath]);
+  return false;
 }
 
 function summarizeList(entries: string[] | undefined): string {
