@@ -56,6 +56,17 @@ export const SETUID_OPTIONS: PromptOption[] = [
   { label: "Abort (keep blocked)", key: "esc", action: "abort" },
 ];
 
+let promptNotifier: (() => void) | undefined;
+
+/**
+ * Register a callback fired right before a permission prompt is shown.
+ * The notify extension listens for `notify:alert` and rings the terminal
+ * bell when the user is away, so prompts don't go unnoticed.
+ */
+export function setPromptNotifier(notifier: (() => void) | undefined): void {
+  promptNotifier = notifier;
+}
+
 export async function showPermissionPrompt(
   ctx: ExtensionContext,
   title: string,
@@ -63,6 +74,7 @@ export async function showPermissionPrompt(
   options: PromptOption[] = PERMISSION_OPTIONS,
 ): Promise<PermissionResult> {
   if (!ctx.hasUI) return "abort";
+  promptNotifier?.();
 
   const result = await ctx.ui.custom<PermissionResult>((tui, theme, _kb, done) => {
     let selectedIndex = 0;

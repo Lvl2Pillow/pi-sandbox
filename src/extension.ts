@@ -47,6 +47,7 @@ import {
   promptReadBlock,
   promptSetuidBlock,
   promptWriteBlock,
+  setPromptNotifier,
   warnIfAllDomainsAllowed,
 } from "./ui.ts";
 
@@ -55,6 +56,12 @@ export default function (pi: ExtensionAPI) {
     description: "Disable OS-level sandboxing for bash commands",
     type: "boolean",
     default: false,
+  });
+
+  // Ring the terminal bell (via the notify extension) whenever a permission
+  // prompt appears, so prompts aren't missed while the user is away.
+  setPromptNotifier(() => {
+    pi.events.emit("notify:alert", undefined);
   });
 
   const localCwd = process.cwd();
