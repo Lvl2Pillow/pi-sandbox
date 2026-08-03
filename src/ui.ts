@@ -228,11 +228,27 @@ export function warnIfAllDomainsAllowed(ctx: ExtensionContext, config: SandboxCo
   );
 }
 
+/**
+ * Footer summary: 📖 read, ✏️ write, 🌐 network.
+ * Reads are deny-listed at the OS level: `*` = nothing denied (all
+ * readable), `-` = all denied, else count of denied regions.
+ * Write/network are allow-listed: `*` = everything allowed, `-` = nothing.
+ */
 export function formatSandboxStatus(config: SandboxConfig): string {
-  const networkLabel = allowsAllDomains(config.network?.allowedDomains)
-    ? "all domains"
-    : `${config.network?.allowedDomains?.length ?? 0} domains`;
-  return `🔒 Sandbox: ${networkLabel}, ${config.filesystem?.allowWrite?.length ?? 0} write paths`;
+  return `📖 ${summarizeDenied(config.filesystem?.denyRead)} ✏️  ${summarizeList(config.filesystem?.allowWrite)} 🌐 ${summarizeList(config.network?.allowedDomains)}`;
+}
+
+/** Deny-list summary: empty deny = all readable; `*` deny = nothing. */
+function summarizeDenied(entries: string[] | undefined): string {
+  if (!entries || entries.length === 0) return "*";
+  if (entries.includes("*")) return "-";
+  return String(entries.length);
+}
+
+function summarizeList(entries: string[] | undefined): string {
+  if (!entries || entries.length === 0) return "-";
+  if (entries.includes("*")) return "*";
+  return String(entries.length);
 }
 
 export function formatSandboxConfiguration(

@@ -62,15 +62,22 @@ function makeMockPi(): MockPi {
   return { pi, handlers, crossHandlers };
 }
 
-function makeCtx(cwd: string, notifies: string[]): ExtensionContext {
-  return {
+function makeCtx(cwd: string): {
+  ctx: ExtensionContext;
+  notifies: string[];
+  statuses: string[];
+} {
+  const notifies: string[] = [];
+  const statuses: string[] = [];
+  const ctx = {
     cwd,
     ui: {
       notify: (message: string) => notifies.push(message),
-      setStatus: () => {},
+      setStatus: (_key: string, text?: string) => statuses.push(text ?? ""),
       theme: { fg: (_name: string, text: string) => text },
     },
   } as unknown as ExtensionContext;
+  return { ctx, notifies, statuses };
 }
 
 /** Fire a captured handler and let its fire-and-forget async chain settle. */
@@ -97,8 +104,7 @@ const RESTRICTED_CONFIG = { filesystem: { allowWrite: [] } };
 test("enable snapshots the current config and reinitializes with the restricted config", async () => {
   stubSandboxManager();
   const { pi, handlers, crossHandlers } = makeMockPi();
-  const notifies: string[] = [];
-  const ctx = makeCtx(mkdtempSync(join(tmpRoot(), "pi-sandbox-test-")), notifies);
+  const { ctx, notifies, statuses } = makeCtx(mkdtempSync(join(tmpRoot(), "pi-sandbox-test-")));
 
   const { default: createExtension } = await import("../src/extension.ts");
   createExtension(pi);
@@ -106,6 +112,11 @@ test("enable snapshots the current config and reinitializes with the restricted 
   // session start: sandbox enabled with the loaded (default) config
   await fire(handlers["session_start"]?.[0], {}, ctx);
   assert.equal(sandboxCalls.length, 1);
+  // reads are deny-listed: empty denyRead = all readable
+  assert.ok(
+    statuses.at(-1)?.includes("📖 *"),
+    `footer shows all-readable, got: ${statuses.at(-1)}`,
+  );
 
   // plan-mode ON: enable with the restricted config
   await fire(crossHandlers["pi-sandbox:enable"]?.[0], { config: RESTRICTED_CONFIG });
@@ -117,13 +128,18 @@ test("enable snapshots the current config and reinitializes with the restricted 
   );
   assert.deepEqual(allowWriteOf(initializedConfigs().at(-1)), []);
   assert.ok(notifies.includes("Sandbox enabled"));
+  // footer updated to the restricted config: write = "-", network preserved
+  assert.ok(
+    statuses.at(-1)?.includes("✏️  -"),
+    `footer reflects restricted write, got: ${statuses.at(-1)}`,
+  );
+  assert.ok(statuses.at(-1)?.includes("🌐"), "network icon stays visible during plan mode");
 });
 
 test("disable restores the pre-enable config instead of fully disabling", async () => {
   stubSandboxManager();
   const { pi, handlers, crossHandlers } = makeMockPi();
-  const notifies: string[] = [];
-  const ctx = makeCtx(mkdtempSync(join(tmpRoot(), "pi-sandbox-test-")), notifies);
+  const { ctx, notifies, statuses } = makeCtx(mkdtempSync(join(tmpRoot(), "pi-sandbox-test-")));
 
   const { default: createExtension } = await import("../src/extension.ts");
   createExtension(pi);
@@ -131,6 +147,7 @@ test("disable restores the pre-enable config instead of fully disabling", async 
   await fire(handlers["session_start"]?.[0], {}, ctx);
   await fire(crossHandlers["pi-sandbox:enable"]?.[0], { config: RESTRICTED_CONFIG });
   assert.deepEqual(allowWriteOf(initializedConfigs().at(-1)), []);
+  assert.ok(statuses.at(-1)?.includes("✏️  -"), "plan mode: write shows restricted");
 
   // plan-mode OFF: disable → restore the snapshot, not a full disable
   await fire(crossHandlers["pi-sandbox:disable"]?.[0]);
@@ -141,13 +158,15 @@ test("disable restores the pre-enable config instead of fully disabling", async 
   assert.ok(Array.isArray(restored) && restored.length > 0, "restored allowWrite is non-empty");
   assert.notDeepEqual(restored, []);
   assert.ok(!notifies.includes("Sandbox disabled"));
+  // footer restored: write count back, network still present
+  assert.ok(!statuses.at(-1)?.includes("✏️  -"), `footer write restored, got: ${statuses.at(-1)}`);
+  assert.ok(statuses.at(-1)?.includes("🌐"), "network icon present after restore");
 });
 
 test("disable without a matching enable falls back to full disable", async () => {
   stubSandboxManager();
   const { pi, handlers, crossHandlers } = makeMockPi();
-  const notifies: string[] = [];
-  const ctx = makeCtx(mkdtempSync(join(tmpRoot(), "pi-sandbox-test-")), notifies);
+  const { ctx, notifies, statuses } = makeCtx(mkdtempSync(join(tmpRoot(), "pi-sandbox-test-")));
 
   const { default: createExtension } = await import("../src/extension.ts");
   createExtension(pi);
@@ -162,13 +181,13 @@ test("disable without a matching enable falls back to full disable", async () =>
     sandboxCalls.map((c) => c[0]),
     ["initialize", "reset"],
   );
+  assert.equal(statuses.at(-1), "", "footer cleared on full disable");
 });
 
 test("nested enables restore in reverse order (LIFO)", async () => {
   stubSandboxManager();
   const { pi, handlers, crossHandlers } = makeMockPi();
-  const notifies: string[] = [];
-  const ctx = makeCtx(mkdtempSync(join(tmpRoot(), "pi-sandbox-test-")), notifies);
+  const { ctx, notifies, statuses } = makeCtx(mkdtempSync(join(tmpRoot(), "pi-sandbox-test-")));
 
   const { default: createExtension } = await import("../src/extension.ts");
   createExtension(pi);
@@ -185,6 +204,10 @@ test("nested enables restore in reverse order (LIFO)", async () => {
   // original loaded config.
   await fire(crossHandlers["pi-sandbox:disable"]?.[0]);
   assert.deepEqual(allowWriteOf(initializedConfigs().at(-1)), ["/custom-a"]);
+  assert.ok(
+    statuses.at(-1)?.includes("✏️  1"),
+    `footer shows restored write count, got: ${statuses.at(-1)}`,
+  );
 
   await fire(crossHandlers["pi-sandbox:disable"]?.[0]);
   const last = allowWriteOf(initializedConfigs().at(-1));
@@ -193,4 +216,6 @@ test("nested enables restore in reverse order (LIFO)", async () => {
     "restored the loaded config",
   );
   assert.ok(!notifies.includes("Sandbox disabled"));
+  assert.ok(!statuses.at(-1)?.includes("✏️  1"), "footer write count restored past LIFO");
+  assert.ok(statuses.at(-1)?.includes("🌐"), "network icon present after LIFO restore");
 });
